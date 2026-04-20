@@ -104,6 +104,24 @@ function detectPhaseFromPattern(name: string, pattern: number): string | null {
   return detectDopplerPhase(pattern);
 }
 
+// ---------- CASE HARDENED TIERS ----------
+const ak47ChTiers: Record<number, string> = {};
+[661].forEach(p => ak47ChTiers[p] = "#1");
+[670,321,955,179,151,760].forEach(p => ak47ChTiers[p] = "High Tier");
+[151,168,179,321,387,555,592,617,670,760,809,828,955].forEach(p => { if (!ak47ChTiers[p]) ak47ChTiers[p] = "Tier 1"; });
+[4,13,28,32,65,74,81,82,92,103,122,139,147,172,189,205,228,256,323,341,426,430,442,463,479,512,525,526,532,541,571,578,605,627,695,698,708,713,750,752,791,844,868,887,888,892,903,905,922,950,969,978,996].forEach(p => { if (!ak47ChTiers[p]) ak47ChTiers[p] = "Tier 2"; });
+[34,112,278,310,312,363,381,413,428,429,450,519,557,586,610,647,685,689,690,733,754,770,819,823,856,862,872,878,935,1000].forEach(p => { if (!ak47ChTiers[p]) ak47ChTiers[p] = "Tier 3"; });
+
+function detectChTier(name: string, pattern: number): string | null {
+  const lower = name.toLowerCase();
+  if (!lower.includes("case hardened")) return null;
+  if (lower.includes("ak-47")) return ak47ChTiers[pattern] || null;
+  return null;
+}
+
+const chTiers = ["#1", "High Tier", "Tier 1", "Tier 2", "Tier 3"];
+const chTierColors: Record<string, string> = { "#1": "#ef4444", "High Tier": "#f59e0b", "Tier 1": "#a855f7", "Tier 2": "#3b82f6", "Tier 3": "#6b7280" };
+
 // ---------- TYPY ----------
 interface Item {
   name: string;
@@ -190,7 +208,7 @@ function AppInner() {
   const [data, setData] = useState<Item[]>([]);
   const [gridCols, setGridCols] = useState<3 | 4 | 5>(4);
   const [search, setSearch] = useState("");
-  const [sort, setSort] = useState("tbAsc");
+  const [sort, setSort] = useState("tbDesc");
   const [typeFilter, setTypeFilter] = useState("All Items");
   const [weaponCategoryFilter, setWeaponCategoryFilter] = useState("");
   const [weaponModelFilter, setWeaponModelFilter] = useState("");
@@ -629,7 +647,7 @@ function AppInner() {
             await fetch("/api/stats", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ userId: user.id, field: "totalProfitSold", amount: profit < 0 ? Math.abs(profit) : +profit }),
+              body: JSON.stringify({ userId: user.id, field: "totalProfitSold", amount: -profit }),
             });
           }
           const statsRes = await fetch(`/api/stats?userId=${user.id}`);
@@ -678,9 +696,6 @@ function AppInner() {
             body: JSON.stringify({ userId: user.id, field: "totalSold", amount: 1 }),
           });
           setCumulativeStats(prev => ({ ...prev, totalProfitSold: prev.totalProfitSold + profit, totalSold: prev.totalSold + 1 }));
-          
-          // ✅ DODAJ PRZEDMIOT DO HISTORII PRZY ZMIANIE STATUSU NA SPRZEDANE!
-          addHistory("Sprzedane", item.name, item);
         }
       } catch { /* skip */ }
     }
@@ -1130,6 +1145,8 @@ function AppInner() {
             return a.tradeBanEnd!.diff(b.tradeBanEnd!);
             return b.tradeBanEnd!.diff(a.tradeBanEnd!);
           }
+          // DEFAULT SORT
+          const now = dayjs();
           const aHasActiveTB = a.tradeBanEnd && a.tradeBanEnd.isAfter(now);
           const bHasActiveTB = b.tradeBanEnd && b.tradeBanEnd.isAfter(now);
           
@@ -1751,8 +1768,8 @@ function AppInner() {
                       const fullName = buildFullName();
                       const detected = detectPhaseFromPattern(fullName, patternNum);
                       if (detected) setFormDopplerPhase(detected);
-                      //const chDetected = detectChTier(fullName, patternNum);
-                      //if (chDetected) setFormChTier(chDetected);
+                      const chDetected = detectChTier(fullName, patternNum);
+                      if (chDetected) setFormChTier(chDetected);
                     }
                   }} />
                 </div>
@@ -2116,6 +2133,10 @@ const wearTypes = ["factory-new", "field-tested", "minimal-wear", "battle-scarre
                       const col = info?.color || "#a855f7";
                       return <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: `${col}22`, color: col, border: `1px solid ${col}55` }}>{item.dopplerPhase}</span>;
                     })()}
+                    {item.chTier && (() => {
+                      const col = chTierColors[item.chTier] || "#6b7280";
+                      return <span className="text-xs px-1.5 py-0.5 rounded font-semibold" style={{ background: `${col}22`, color: col, border: `1px solid ${col}55` }}>{item.chTier}</span>;
+                    })()}
                   </div>
 
                   {/* Buy / Sell */}
@@ -2448,21 +2469,32 @@ const wearTypes = ["factory-new", "field-tested", "minimal-wear", "battle-scarre
               </div>
 
               {/* Stats */}
-             <div className="grid grid-cols-2 gap-3">
-  {/* Profit */}
-  <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-color)" }}>
-    <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{t.profit}</div>
-    <div className="text-lg font-bold" style={{ color: cumulativeStats.totalProfitSold >= 0 ? "#4ade80" : "#f87171" }}>
-      {cumulativeStats.totalProfitSold >= 0 ? "+" : ""}${cumulativeStats.totalProfitSold.toFixed(2)}
-    </div>
-  </div>
+              <div className="mb-6">
+                <p className="text-xs mb-3 font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>{t.statistics} <span className="font-normal">({t.allTime})</span></p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-color)" }}>
+                    <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{t.items}</div>
+                    <div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{cumulativeStats.totalItemsAdded}</div>
+                  </div>
+                  <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-color)" }}>
+                    <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>ROI</div>
+                    <div className={`text-lg font-bold ${getColorROI(cumulativeStats.totalInvested > 0 ? (cumulativeStats.totalProfitSold / cumulativeStats.totalInvested) * 100 : 0)}`}>
+                      {cumulativeStats.totalInvested > 0 ? ((cumulativeStats.totalProfitSold / cumulativeStats.totalInvested) * 100).toFixed(1) : "0.0"}%
+                    </div>
+                  </div>
+                  <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-color)" }}>
+                    <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{t.profit}</div>
+                    <div className="text-lg font-bold" style={{ color: cumulativeStats.totalProfitSold >= 0 ? "#4ade80" : "#f87171" }}>
+                      {cumulativeStats.totalProfitSold >= 0 ? "+" : ""}${cumulativeStats.totalProfitSold.toFixed(2)}
+                    </div>
+                  </div>
+                  <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-color)" }}>
+                    <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{t.soldCount}</div>
+                    <div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{cumulativeStats.totalSold}</div>
+                  </div>
+                </div>
+              </div>
 
-  {/* Sold */}
-  <div className="rounded-lg p-3" style={{ background: "var(--bg-elevated)", border: "1px solid var(--border-color)" }}>
-    <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>{t.soldCount}</div>
-    <div className="text-lg font-bold" style={{ color: "var(--text-primary)" }}>{Math.max(0, cumulativeStats.totalSold)}</div>
-  </div>
-</div>
               {/* Status breakdown */}
               <div className="mb-6">
                 <p className="text-xs mb-3 font-medium uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>{t.itemStatus}</p>
@@ -2649,29 +2681,6 @@ const wearTypes = ["factory-new", "field-tested", "minimal-wear", "battle-scarre
                       <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>${(historyDetail.sell || 0).toFixed(2)}</div>
                       <div className="text-xs" style={{ color: "var(--text-muted)" }}>{historyDetail.sellPlace}</div>
                     </div>
-                    {(() => {
-                      const sellFee = allMarkets.find(m => m.name === historyDetail.sellPlace)?.sellFee || 0;
-                      const netSell = historyDetail.sell * (1 - sellFee);
-                      const profit = netSell - historyDetail.buy;
-                      const roi = historyDetail.buy > 0 ? (profit / historyDetail.buy) * 100 : 0;
-                    
-                      return (
-                        <>
-                          <div className="rounded-lg p-2.5" style={{ background: profit >= 0 ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: profit >= 0 ? "1px solid rgba(34,197,94,0.12)" : "1px solid rgba(239,68,68,0.12)" }}>
-                            <div className="text-xs mb-0.5" style={{ color: profit >= 0 ? "#4ade80" : "#f87171" }}>Profit (netto)</div>
-                            <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                              {profit >= 0 ? '+' : ''}${profit.toFixed(2)}
-                            </div>
-                          </div>
-                          <div className="rounded-lg p-2.5" style={{ background: roi >= 0 ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: roi >= 0 ? "1px solid rgba(34,197,94,0.12)" : "1px solid rgba(239,68,68,0.12)" }}>
-                            <div className="text-xs mb-0.5" style={{ color: roi >= 0 ? "#4ade80" : "#f87171" }}>ROI (netto)</div>
-                            <div className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-                              {roi >= 0 ? '+' : ''}{roi.toFixed(1)}%
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
                   </div>
                   {historyDetail.dopplerPhase && (() => {
                     const info = getDopplerPhaseInfo(historyDetail.name, historyDetail.dopplerPhase);
